@@ -10,8 +10,11 @@ use ggez::*;
 
 struct GameState {
     table: Table,
+    // tiles which we are sure are correct
     correct: HashSet<usize>,
+    // a tile that is blocking the value we are trying to place
     blocking: Option<(usize, usize)>,
+    // the selected value to place
     selected: u8,
 }
 
@@ -33,6 +36,7 @@ impl GameState {
         self.table.fill(0);
         self.table.unsolve();
 
+        // Set the correct tiles to the ones the algorithm has left in
         self.correct.clear();
         for i in 0..self.table.side * self.table.side {
             if self.table.grid[i as usize] != 0 {
@@ -53,8 +57,10 @@ impl GameState {
     }
 
     fn nowhere_else(&self, index: usize, target: u8, indexes: impl Iterator<Item = usize>) -> bool {
-        // No other tile can assume this value
+        // No other tile in `indexes` can assume this value
         // Because it is already present in their neighborhood (column + row + quadrant)
+        // We filter out the correct tiles because we already know they can only assume
+        // a certain value, so they will never be able to be == target
         indexes
             .filter(|i| !(self.correct.contains(i) || *i == index))
             .map(|i| {
@@ -81,8 +87,8 @@ impl GameState {
 
         // Do this each time a new certain value is added
         let mut changed = true;
-        let mut changed_index = 0;
         while changed {
+            let mut changed_index = 0;
             changed = false;
 
             // Now consider if each value is correct based only
@@ -137,6 +143,9 @@ impl GameState {
     fn step(&mut self) {
         let original = self.table.grid.clone();
 
+        // Remove all the not certain tiles
+        // So we can calculate the next step basing our assumption
+        // on only correct cells
         let mut holes = HashSet::new();
         for i in 0..self.table.side * self.table.side {
             if !self.correct.contains(&i) {
@@ -145,7 +154,8 @@ impl GameState {
             }
         }
 
-        self.table.obviuos_step(&mut holes);
+        self.table.obvious_step(&mut holes);
+        // Insert previuosly uncertain values if they are still valid
         for (i, value) in original.iter().enumerate() {
             if self.table.grid[i] == 0 {
                 let valid = self.table.valid(i);
@@ -259,32 +269,6 @@ impl event::EventHandler for GameState {
             KeyCode::Key7 => self.selected = 7,
             KeyCode::Key8 => self.selected = 8,
             KeyCode::Key9 => self.selected = 9,
-            KeyCode::A => self.selected = 1,
-            KeyCode::B => self.selected = 2,
-            KeyCode::C => self.selected = 3,
-            KeyCode::D => self.selected = 4,
-            KeyCode::E => self.selected = 5,
-            KeyCode::F => self.selected = 6,
-            KeyCode::G => self.selected = 7,
-            KeyCode::H => self.selected = 8,
-            KeyCode::I => self.selected = 9,
-            KeyCode::J => self.selected = 10,
-            KeyCode::K => self.selected = 11,
-            KeyCode::L => self.selected = 12,
-            KeyCode::M => self.selected = 13,
-            KeyCode::N => self.selected = 14,
-            KeyCode::O => self.selected = 15,
-            KeyCode::P => self.selected = 16,
-            KeyCode::Q => self.selected = 17,
-            KeyCode::R => self.selected = 18,
-            KeyCode::S => self.selected = 19,
-            KeyCode::T => self.selected = 20,
-            KeyCode::U => self.selected = 21,
-            KeyCode::V => self.selected = 22,
-            KeyCode::W => self.selected = 23,
-            KeyCode::X => self.selected = 24,
-            KeyCode::Y => self.selected = 25,
-            KeyCode::Z => self.selected = 26,
             KeyCode::Tab => self.step(),
             _ => {}
         }
@@ -308,7 +292,7 @@ impl event::EventHandler for GameState {
                         self.update_correct();
                     }
                 } else {
-                    // This is not valid, let's find the reason why
+                    // Let's find what tile makes it invalid
                     let blocking_index = self
                         .table
                         .neighborhood(grid_x, grid_y)
