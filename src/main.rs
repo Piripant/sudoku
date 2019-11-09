@@ -77,7 +77,7 @@ impl GameState {
 
     fn update_correct(&mut self) {
         // Remove all the uncertain values
-        for (index, _) in &self.uncertain {
+        for index in self.uncertain.keys() {
             self.table.grid[*index] = 0;
         }
 

@@ -103,7 +103,7 @@ impl Table {
     }
 
     // Return the first obvious move
-    pub fn obvious_move(&mut self, holes: &HashSet<usize>) -> Option<(usize, u8)> {
+    pub fn obvious_move(&self, holes: &HashSet<usize>) -> Option<(usize, u8)> {
         for index in holes.iter() {
             let possibles = self.valid(*index);
 
