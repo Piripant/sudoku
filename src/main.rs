@@ -12,6 +12,8 @@ struct GameState {
     table: Table,
     // tiles which we are sure are correct
     correct: HashSet<usize>,
+    // tiles we placed down which we are uncertain are correct
+    uncertain: HashMap<usize, u8>,
     // a tile that is blocking the value we are trying to place
     blocking: Option<(usize, usize)>,
     // the selected value to place
@@ -23,6 +25,7 @@ impl GameState {
         let mut game = GameState {
             table: Table::new(3),
             correct: HashSet::new(),
+            uncertain: HashMap::new(),
             blocking: None,
             selected: 0,
         };
@@ -73,16 +76,9 @@ impl GameState {
     }
 
     fn update_correct(&mut self) {
-        // Uncertain values are values that can be placed where they are
-        // But we are not sure are the correct move
-        let mut uncertain = HashMap::new();
-
         // Remove all the uncertain values
-        for i in 0..self.table.side * self.table.side {
-            if !self.correct.contains(&i) && self.table.grid[i] != 0 {
-                uncertain.insert(i, self.table.grid[i]);
-                self.table.grid[i] = 0;
-            }
+        for (index, _) in &self.uncertain {
+            self.table.grid[*index] = 0;
         }
 
         // Do this each time a new certain value is added
@@ -93,7 +89,7 @@ impl GameState {
 
             // Now consider if each value is correct based only
             // on the values we are sure are correct (so no guessed the user made mess us up)
-            for (index, value) in &uncertain {
+            for (index, value) in &self.uncertain {
                 let (x, y) = self.table.position(*index);
                 changed_index = *index;
 
@@ -124,14 +120,14 @@ impl GameState {
 
             if changed {
                 self.correct.insert(changed_index);
-                let value = uncertain.remove(&changed_index).unwrap();
+                let value = self.uncertain.remove(&changed_index).unwrap();
                 self.table.grid[changed_index] = value;
             }
         }
 
-        // Reset the grid back to standard
-        for (index, value) in uncertain {
-            self.table.grid[index] = value;
+        // Reset the grid back to the original
+        for (index, value) in &self.uncertain {
+            self.table.grid[*index] = *value;
         }
 
         // All cells are correct
@@ -141,9 +137,7 @@ impl GameState {
     }
 
     fn step(&mut self) {
-        let original = self.table.grid.clone();
-
-        // Remove all the not certain tiles
+        // Remove all the not correct tiles
         // So we can calculate the next step basing our assumption
         // on only correct cells
         let mut holes = HashSet::new();
@@ -154,15 +148,22 @@ impl GameState {
             }
         }
 
-        self.table.obvious_step(&mut holes);
-        // Insert previuosly uncertain values if they are still valid
-        for (i, value) in original.iter().enumerate() {
-            if self.table.grid[i] == 0 {
-                let valid = self.table.valid(i);
-                if valid.contains(&value) {
-                    self.table.grid[i] = *value;
-                }
+        if let Some((index, value)) = self.table.obvious_move(&holes) {
+            self.table.grid[index] = value;
+            self.correct.insert(index);
+        }
+
+        // Check if our uncertain values are now certain or invalid
+        let mut to_remove = Vec::new();
+        for (index, value) in &self.uncertain {
+            if self.table.grid[*index] == 0 &&  self.table.valid(*index).contains(&value) {
+                self.table.grid[*index] = *value;
+            } else {
+                to_remove.push(*index);
             }
+        }
+        for index in to_remove {
+            self.uncertain.remove(&index);
         }
 
         self.update_correct();
@@ -289,6 +290,7 @@ impl event::EventHandler for GameState {
                 if valid.contains(&self.selected) {
                     if !self.correct.contains(&index) {
                         self.table.grid[index] = self.selected;
+                        self.uncertain.insert(index, self.selected);
                         self.update_correct();
                     }
                 } else {
@@ -303,8 +305,9 @@ impl event::EventHandler for GameState {
                 }
             }
             MouseButton::Right => {
-                if !self.correct.contains(&index) {
+                if self.uncertain.contains_key(&index) {
                     self.table.grid[index] = 0;
+                    self.uncertain.remove(&index);
                     self.update_correct();
                 }
             }

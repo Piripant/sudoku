@@ -102,42 +102,41 @@ impl Table {
         false
     }
 
-    pub fn obvious_step(&mut self, holes: &mut HashSet<usize>) -> bool {
-        for to_place in holes.iter() {
-            let to_place = *to_place;
-
-            let possibles = self.valid(to_place);
+    // Return the first obvious move
+    pub fn obvious_move(&mut self, holes: &HashSet<usize>) -> Option<(usize, u8)> {
+        for index in holes.iter() {
+            let possibles = self.valid(*index);
 
             // If we have no possibilities on a tile than the puzzle is unsolvable
             // Because we only place values when we cant choose anything else
             if possibles.is_empty() {
-                return false;
+                return None;
             } else if possibles.len() == 1 {
                 // We are obliged to do this move, as it is the only one possible
-                // The "hole" is now filled and we can loop again with the new tiles to place
-                self.grid[to_place] = *possibles.iter().nth(0).unwrap();
-                holes.remove(&to_place);
-                return true;
+                let value = possibles.iter().nth(0).unwrap();
+                return Some((*index, *value));
             }
         }
 
         // We couldn't make an obvious move
-        false
+        None
     }
 
     // Can we solve this grid only making moves where we have no other choice?
     // Aka: obvious
     pub fn obvious(&mut self, initial: &HashSet<usize>) -> bool {
+        // Copy the missing tiles so we can reset them later
         let mut holes = initial.clone();
 
         let solvable = loop {
-            let placed_something = self.obvious_step(&mut holes);
-
-            if holes.is_empty() {
-                // There were no values to place
+            if let Some((index, value)) = self.obvious_move(&holes) {
+                self.grid[index] = value;
+                holes.remove(&index);
+            } else if holes.is_empty() {
+                // If we couldn't place a value but is because we already placed everything
                 break true;
-            } else if !placed_something {
-                // We couldn't place a value in a obvious way
+            } else {
+                // We couldn't place a value and the grid isn't empty
                 break false;
             }
         };
