@@ -8,6 +8,8 @@ use ggez::event::*;
 use ggez::nalgebra as na;
 use ggez::*;
 
+
+// TABLE LOGIC
 struct GameState {
     table: Table,
     // tiles which we are sure are correct
@@ -48,17 +50,6 @@ impl GameState {
         }
     }
 
-    fn to_screen(&self, x: usize, y: usize) -> na::Point2<f32> {
-        na::Point2::new(x as f32 * SCALE + OFFSET, y as f32 * SCALE + OFFSET)
-    }
-
-    fn to_world(&self, x: f32, y: f32) -> (usize, usize) {
-        (
-            ((x - OFFSET) / SCALE) as usize,
-            ((y - OFFSET) / SCALE) as usize,
-        )
-    }
-
     fn nowhere_else(&self, index: usize, target: u8, indexes: impl Iterator<Item = usize>) -> bool {
         // No other tile in `indexes` can assume this value
         // Because it is already present in their neighborhood (column + row + quadrant)
@@ -73,6 +64,20 @@ impl GameState {
                     .any(|i| self.table.grid[i] == target)
             })
             .all(|found| found)
+    }
+
+    fn place_tile(&mut self, index: usize, value: u8) {
+        // We aren't overriding a correct tile
+        assert!(self.correct.contains(index));
+
+        self.table.grid[index] = value;
+        if value == 0 {
+            self.uncertain.remove(&index);
+        } else {
+            self.uncertain.insert(&index);
+        }
+
+        self.update_correct();
     }
 
     fn update_correct(&mut self) {
@@ -140,10 +145,13 @@ impl GameState {
         // Remove all the not correct tiles
         // So we can calculate the next step basing our assumption
         // on only correct cells
+        for index in self.uncertain.keys() {
+            self.table.grid[*index] = 0;
+        }
+
         let mut holes = HashSet::new();
         for i in 0..self.table.side * self.table.side {
-            if !self.correct.contains(&i) {
-                self.table.grid[i] = 0;
+            if self.table.grid[i] == 0 {
                 holes.insert(i);
             }
         }
@@ -151,12 +159,13 @@ impl GameState {
         if let Some((index, value)) = self.table.obvious_move(&holes) {
             self.table.grid[index] = value;
             self.correct.insert(index);
+            self.uncertain.remove(&index);
         }
 
         // Check if our uncertain values are now certain or invalid
         let mut to_remove = Vec::new();
         for (index, value) in &self.uncertain {
-            if self.table.grid[*index] == 0 &&  self.table.valid(*index).contains(&value) {
+            if self.table.valid(*index).contains(&value) {
                 self.table.grid[*index] = *value;
             } else {
                 to_remove.push(*index);
@@ -168,6 +177,18 @@ impl GameState {
 
         self.update_correct();
     }
+}
+
+// RENDERING
+fn to_screen(x: usize, y: usize) -> na::Point2<f32> {
+    na::Point2::new(x as f32 * SCALE + OFFSET, y as f32 * SCALE + OFFSET)
+}
+
+fn to_world(x: f32, y: f32) -> (usize, usize) {
+    (
+        ((x - OFFSET) / SCALE) as usize,
+        ((y - OFFSET) / SCALE) as usize,
+    )
 }
 
 impl event::EventHandler for GameState {
@@ -186,8 +207,8 @@ impl event::EventHandler for GameState {
                 2.0
             };
 
-            let start = self.to_screen(x, 0);
-            let end = self.to_screen(x, self.table.side);
+            let start = to_screen(x, 0);
+            let end = to_screen(x, self.table.side);
             let circle = graphics::Mesh::new_line(ctx, &[start, end], thick, graphics::BLACK)?;
             graphics::draw(ctx, &circle, (na::Point2::new(0.0, 0.0),))?;
         }
@@ -200,8 +221,8 @@ impl event::EventHandler for GameState {
                 2.0
             };
 
-            let start = self.to_screen(0, y);
-            let end = self.to_screen(self.table.side, y);
+            let start = to_screen(0, y);
+            let end = to_screen(self.table.side, y);
             let circle = graphics::Mesh::new_line(ctx, &[start, end], thick, graphics::BLACK)?;
             graphics::draw(ctx, &circle, (na::Point2::new(0.0, 0.0),))?;
         }
@@ -220,7 +241,7 @@ impl event::EventHandler for GameState {
                 text.set_font(font, graphics::Scale::uniform(40.0));
                 text.set_bounds(na::Point2::new(SCALE, SCALE), graphics::Align::Center);
 
-                let mut position = self.to_screen(x, y);
+                let mut position = to_screen(x, y);
                 position.y += (SCALE - text.height(ctx) as f32) / 2.0;
 
                 let color = if self.correct.contains(&index) {
@@ -238,7 +259,7 @@ impl event::EventHandler for GameState {
         }
 
         if let Some(blocking) = self.blocking {
-            let position = self.to_screen(blocking.0, blocking.1);
+            let position = to_screen(blocking.0, blocking.1);
             let rect = graphics::Mesh::new_rectangle(
                 ctx,
                 graphics::DrawMode::fill(),
@@ -278,7 +299,7 @@ impl event::EventHandler for GameState {
     }
 
     fn mouse_button_down_event(&mut self, _ctx: &mut Context, button: MouseButton, x: f32, y: f32) {
-        let (grid_x, grid_y) = self.to_world(x, y);
+        let (grid_x, grid_y) = to_world(x, y);
         if grid_x >= self.table.side || grid_y >= self.table.side {
             return;
         }
@@ -288,10 +309,9 @@ impl event::EventHandler for GameState {
             MouseButton::Left => {
                 let valid = self.table.valid(index);
                 if valid.contains(&self.selected) {
+                    // Dont override correct tiles
                     if !self.correct.contains(&index) {
-                        self.table.grid[index] = self.selected;
-                        self.uncertain.insert(index, self.selected);
-                        self.update_correct();
+                        self.place_tile(index, self.selected);
                     }
                 } else {
                     // Let's find what tile makes it invalid
@@ -305,10 +325,9 @@ impl event::EventHandler for GameState {
                 }
             }
             MouseButton::Right => {
+                // Only remove uncertain tiles
                 if self.uncertain.contains_key(&index) {
-                    self.table.grid[index] = 0;
-                    self.uncertain.remove(&index);
-                    self.update_correct();
+                    self.place_tile(index, 0);
                 }
             }
             _ => {}
