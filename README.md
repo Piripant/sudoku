@@ -1,6 +1,8 @@
 # sudoku
 A sudoku game written in Rust using ggez.
 
+![](screenshot.png)
+
 The sudoku engine can support n-sized sudokus but the game only uses standard 9x9 grids. You can still modify the source code to play with bigger (or smaller) sudoku grids and everything will still work.
 
 ## Running
