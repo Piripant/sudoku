@@ -67,14 +67,11 @@ impl GameState {
     }
 
     fn place_tile(&mut self, index: usize, value: u8) {
-        // We aren't overriding a correct tile
-        assert!(self.correct.contains(index));
-
         self.table.grid[index] = value;
         if value == 0 {
             self.uncertain.remove(&index);
         } else {
-            self.uncertain.insert(&index);
+            self.uncertain.insert(index, value);
         }
 
         self.update_correct();
