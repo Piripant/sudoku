@@ -29,7 +29,7 @@ impl GameState {
             correct: HashSet::new(),
             uncertain: HashMap::new(),
             blocking: None,
-            selected: 0,
+            selected: 1,
         };
         game.reset();
 
